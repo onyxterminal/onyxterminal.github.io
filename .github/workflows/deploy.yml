@@ -1,0 +1,66 @@
+name: deploy
+
+# Serves the site at https://onyxterminal.github.io/ (the org apex).
+#
+# The source of truth is onyxterminal/onyxterm-web — this repository holds no
+# site code, only the pipeline. Change the site there, not here.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Keeps the apex in step even if onyxterm-web is edited through the API.
+    - cron: '17 4 * * 1'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the site source
+        uses: actions/checkout@v4
+        with:
+          repository: onyxterminal/onyxterm-web
+          ref: main
+          path: site
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install
+        working-directory: site
+        run: npm ci
+
+      - name: Build
+        working-directory: site
+        env:
+          # Apex sits at the domain root, so assets are rooted at /.
+          BASE_PATH: /
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
